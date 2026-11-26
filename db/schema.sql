@@ -10,8 +10,10 @@ CREATE TABLE IF NOT EXISTS lote (
     extraido_em   date        NOT NULL,
     carregado_em  timestamptz NOT NULL DEFAULT now(),
     total_bruto   integer     NOT NULL,
-    total_unico   integer     NOT NULL
+    total_unico   integer     NOT NULL,
+    versao_classificacao text NOT NULL DEFAULT 'classes-v1'
 );
+ALTER TABLE lote ADD COLUMN IF NOT EXISTS versao_classificacao text NOT NULL DEFAULT 'classes-v1';
 
 -- Classe semantica do valor: so preco_litro entra no calculo da referencia.
 CREATE TABLE IF NOT EXISTS registro (

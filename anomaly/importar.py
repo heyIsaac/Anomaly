@@ -13,7 +13,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from . import regra
-from .classificar import classificar, pistas
+from .classificar import VERSAO as VERSAO_CLASSES, classificar, pistas
 from .origem import conferir
 
 DSN = os.environ.get('DATABASE_URL', 'postgresql://anomaly:anomaly-local@127.0.0.1:5433/anomaly')
@@ -37,10 +37,10 @@ def importar(conn, arquivo: Path, uf: str, extraido_em: date, cache: Path, rede:
     catmat = catmat or Counter(x['codigoItemCatalogo'] for _, x in unicos.values()).most_common(1)[0][0]
     with conn.cursor() as cur:
         cur.execute(SCHEMA.read_text())
-        cur.execute('INSERT INTO lote (fonte, catmat, arquivo, sha256, extraido_em, total_bruto, total_unico)'
-                    ' VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id',
+        cur.execute('INSERT INTO lote (fonte, catmat, arquivo, sha256, extraido_em, total_bruto, total_unico, versao_classificacao)'
+                    ' VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
                     (FONTE, catmat, str(arquivo), hashlib.sha256(texto.encode()).hexdigest(),
-                     extraido_em, total, len(unicos)))
+                     extraido_em, total, len(unicos), VERSAO_CLASSES))
         lote = cur.fetchone()[0]
 
         classes, refs = Counter(), []

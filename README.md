@@ -31,3 +31,15 @@ uv run pytest                        # inclui o aceite de Mangaratiba (precisa d
 - `anomaly/`: pacote do importador. `db/schema.sql`: schema (aplicado pelo importador, idempotente).
 - `bancada/`: scripts da bancada de 2026-11-26 (rodar de dentro de `bancada/` ou com o caminho dos dados).
 - `dados/`: extrações brutas e cache do PNCP. Não editar à mão.
+
+## Web (`web/`)
+
+Next.js 16 (App Router, Cache Components) com Tailwind. Lê o lote mais recente com um papel somente leitura.
+
+```bash
+docker compose exec -T db psql -U anomaly -d anomaly < db/leitura.sql   # uma vez: cria anomaly_leitura
+cd web && pnpm install && pnpm dev                                         # http://localhost:3000
+```
+
+`DATABASE_URL_LEITURA` sobrescreve a conexão. Rotas: `/` (lista, filtros `situacao` e `municipio`) e
+`/compras/<idCompraItem>` (detalhe com régua de evidência, números da referência, objeto, origem e comparáveis).

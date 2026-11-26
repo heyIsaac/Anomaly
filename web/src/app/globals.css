@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --color-papel: #eef1f4;
+  --color-folha: #f8fafb;
+  --color-tinta: #1c2733;
+  --color-apoio: #5b6878;
+  --color-fio: #c9d1da;
+  --color-faixa: #9fb3c8;
+  --color-bomba: #e8a317;
+  --color-alerta: #8a5300;
+  --color-alerta-fundo: #fbefd6;
+  --font-sans: var(--font-public-sans), system-ui, sans-serif;
+  --font-fonte: var(--font-source-serif), Georgia, serif;
+}
+
+@layer base {
+  html { background: var(--color-papel); color: var(--color-tinta); }
+  body { font-family: var(--font-sans); font-feature-settings: "tnum" 1, "lnum" 1; line-height: 1.5; }
+  a { text-underline-offset: 0.2em; }
+  :focus-visible { outline: 2px solid var(--color-tinta); outline-offset: 3px; border-radius: 2px; }
+  ::selection { background: var(--color-alerta-fundo); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .revelar-marca { animation: revelar 600ms 200ms cubic-bezier(.2, .7, .2, 1) both; }
+  @keyframes revelar { from { opacity: 0; transform: translateY(-10px); } }
+}

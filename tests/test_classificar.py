@@ -19,10 +19,17 @@ def test_gestao_pelo_objeto():
     assert c(objetoCompra='Servicos de gerenciamento de abastecimento de combustiveis') == 'gestao'
 
 
-def test_nao_unitario():
+def test_nao_unitario_exige_preco_implausivel():
     assert c(quantidade=D('1'), precoUnitario=D('696654')) == 'nao_unitario'
-    assert c(quantidade=D('12'), precoUnitario=D('6.50')) == 'nao_unitario'
+    assert c(quantidade=D('12'), precoUnitario=D('28114.0083')) == 'nao_unitario'
     assert c(precoUnitario=D('1.0'), quantidade=D('255023')) == 'nao_unitario'
+
+
+def test_quantidade_1_ou_12_com_preco_plausivel_e_pista():
+    x = {**BASE, 'quantidade': D('12'), 'precoUnitario': D('6.25')}
+    assert classificar(x)[0] == 'preco_litro'
+    assert 'quantidade 12' in pistas(x)
+    assert c(quantidade=D('1'), precoUnitario=D('6.20')) == 'preco_litro'
 
 
 def test_indeterminado():

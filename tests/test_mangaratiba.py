@@ -67,4 +67,5 @@ def test_tres_situacoes_presentes(lote):
 def test_classes_da_base_b(lote):
     conn, lote_id = lote
     c = dict(conn.execute('SELECT classe, count(*) FROM registro WHERE lote_id=%s GROUP BY 1', (lote_id,)).fetchall())
-    assert c['preco_litro'] == 1602
+    # Base B (1602) + 3 registros do PR com quantidade 1 e preco plausivel, que a v1 excluia.
+    assert c['preco_litro'] == 1605

@@ -5,28 +5,39 @@ from pathlib import Path
 URL = ('https://dadosabertos.compras.gov.br/modulo-contratacoes/'
        '2.1_consultarItensContratacoes_PNCP_14133_Id?tipo=idCompra&codigo={}')
 
+TRANSITORIOS = {408, 425, 429, 500, 502, 503, 504}
+
+
+def _baixar(id_compra, tentativas=3, espera=2):
+    """Devolve o corpo JSON, {'erro': 404} para ausencia definitiva ou None para falha transitoria."""
+    for t in range(tentativas):
+        try:
+            with urllib.request.urlopen(URL.format(id_compra), timeout=60) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code not in TRANSITORIOS:
+                return {'erro': e.code}
+        except (OSError, http.client.HTTPException):  # URLError, timeout, conexao derrubada
+            pass
+        if t + 1 < tentativas:
+            time.sleep(espera * (t + 1))
+    return None
+
 
 def itens_da_compra(id_compra, cache: Path, rede=True):
+    """So respostas definitivas (sucesso ou 4xx nao transitorio) vao para o cache."""
     path = cache / f'{id_compra}.json'
-    if not path.exists():
-        if not rede:
-            return None
-        for tentativa in range(2):
-            try:
-                with urllib.request.urlopen(URL.format(id_compra), timeout=60) as r:
-                    body = json.load(r)
-                break
-            except urllib.error.HTTPError as e:
-                body = {'erro': e.code}
-                break
-            except (OSError, http.client.HTTPException) as e:  # URLError, timeout, conexao derrubada
-                if tentativa:
-                    return {'erro': f'rede: {e}'}  # falha de rede nao vai para o cache
-                time.sleep(2)
-        cache.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(body, ensure_ascii=False))
-        time.sleep(0.3)
-    return json.loads(path.read_text())
+    if path.exists():
+        return json.loads(path.read_text())
+    if not rede:
+        return None
+    body = _baixar(id_compra)
+    if body is None:
+        return {'erro': 'transitorio'}
+    cache.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(body, ensure_ascii=False))
+    time.sleep(0.3)
+    return body
 
 
 def conferir(id_compra, id_compra_item, cache: Path, rede=True):

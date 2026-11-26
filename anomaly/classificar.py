@@ -2,10 +2,13 @@
 
 So `preco_litro` entra na referencia. As demais classes guardam o motivo para aparecer
 no resumo da carga. Criterio D, quantidade 1 ou 12 e preco fora da faixa sao pistas de
-revisao: sozinhas nao decidem a exclusao, exceto quando a regra abaixo diz isso.
+revisao: sozinhas nao decidem a exclusao. Quantidade 1 ou 12 so vira nao_unitario quando o
+preco tambem e implausivel por litro.
 """
 import re
 from decimal import Decimal
+
+VERSAO = 'classes-v2'  # v1 excluia quantidade 1 ou 12 mesmo com preco plausivel
 
 FAIXA = (Decimal('2'), Decimal('15'))  # R$/L plausivel para gasolina comum no periodo
 GESTAO = re.compile(r'gerenciamento|intermedia|sistema informatizado|cart[aã]o (magn|de abast|combust)'
@@ -25,7 +28,7 @@ def pistas(x):
 
 
 def classificar(x):
-    """Devolve (classe, motivo). Ordem: unidade, preco, objeto, quantidade, faixa, campos."""
+    """Devolve (classe, motivo). Ordem: unidade, preco, objeto, faixa (com quantidade), campos."""
     p, q = x.get('precoUnitario'), x.get('quantidade')
     if x.get('siglaUnidadeFornecimento') != 'L':
         return 'indeterminado', f"unidade de fornecimento {x.get('siglaUnidadeFornecimento')!r}, nao litro"
@@ -34,11 +37,12 @@ def classificar(x):
     m = GESTAO.search(x.get('objetoCompra') or '')
     if m:
         return 'gestao', f"objeto da compra cita '{m.group(0)}': contrato de gestao de abastecimento"
-    if q in (1, 12):
-        return 'nao_unitario', f'quantidade {q:g}: o preco provavelmente e valor global ou mensal'
-    if p == 1:
-        return 'nao_unitario', 'preco R$ 1,00: a quantidade provavelmente e o orcamento em reais'
     if not FAIXA[0] <= p <= FAIXA[1]:
+        # Quantidade 1 ou 12 e preco R$ 1,00 so excluem como nao unitario junto com preco implausivel por litro.
+        if q in (1, 12):
+            return 'nao_unitario', f'quantidade {q:g} com preco R$ {p} fora da faixa: valor global ou mensal'
+        if p == 1:
+            return 'nao_unitario', 'preco R$ 1,00 fora da faixa: a quantidade provavelmente e o orcamento em reais'
         return 'indeterminado', f'preco R$ {p} fora da faixa de R$ 2 a R$ 15 por litro'
     if not x.get('dataCompra'):
         return 'indeterminado', 'sem data da compra'
