@@ -1,0 +1,16 @@
+[project]
+name = "anomaly"
+version = "0.1.0"
+description = "Importacao e analise IQR do piloto ANOMALY"
+requires-python = ">=3.12"
+dependencies = ["psycopg[binary]>=3.2"]
+
+[project.scripts]
+anomaly-import = "anomaly.importar:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
