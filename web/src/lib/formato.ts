@@ -33,3 +33,22 @@ export function linkPncp(controle: string) {
 export function linkCompras(idCompra: string, catmat: number) {
   return `https://dadosabertos.compras.gov.br/modulo-pesquisa-preco/1_consultarMaterial?tipo=codigoItemCatalogo&codigo=${catmat}&idCompra=${idCompra}`
 }
+
+/** "resma de 500 folhas" -> "resma"; "litro" -> "litro". Para cabecalhos curtos. */
+export const unidadeCurta = (unidade: string) => unidade.split(' ')[0]
+
+/** Rotulo de cada classe que ficou fora da referencia, no plural, para o resumo da carga. */
+export const FORA: Record<string, string> = {
+  gestao: 'contratos de gestão de abastecimento',
+  nao_unitario: 'valores que não são preço unitário',
+  outro_item: 'de outro item ou tipo de papel',
+  outra_embalagem: 'em embalagens de outro tamanho',
+  indeterminado: 'sem significado confirmado',
+}
+
+/** O que foi comprado, em linguagem de quem le: "83.000 litros", "120 pacotes de 500 folhas". */
+export function quantidadeComprada(categoria: string, quantidade: number, capacidade: number | null) {
+  if (categoria === 'gasolina') return `${inteiro(quantidade)} litros`
+  const pacote = capacidade ? `de ${inteiro(capacidade)} folhas` : ''
+  return `${inteiro(quantidade)} ${quantidade === 1 ? 'pacote' : 'pacotes'} ${pacote}`.trim()
+}

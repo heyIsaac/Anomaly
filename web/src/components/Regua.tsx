@@ -8,6 +8,7 @@ type Props = {
   q3: number | null
   limite: number | null
   acima: boolean
+  unidade: string
 }
 
 const L = 720, H = 196, ESQ = 24, DIR = 24, EIXO = 150, R = 5
@@ -18,7 +19,7 @@ function passo(span: number) {
 }
 
 /** Reta de precos: comparaveis como pontos empilhados, faixa Q1-Q3, limite e o preco desta compra. */
-export function Regua({ precos, observado, q1, mediana, q3, limite, acima }: Props) {
+export function Regua({ precos, observado, q1, mediana, q3, limite, acima, unidade }: Props) {
   const valores = [...precos, observado, ...(limite != null ? [limite] : [])]
   const p = passo(Math.max(...valores) - Math.min(...valores) || 1)
   const min = Math.floor((Math.min(...valores) - p / 2) / p) * p
@@ -31,14 +32,20 @@ export function Regua({ precos, observado, q1, mediana, q3, limite, acima }: Pro
   const ticks: number[] = []
   for (let t = min; t <= max + 1e-9; t += p) ticks.push(Math.round(t * 100) / 100)
 
-  // Empilha pontos que caem no mesmo lugar, para mostrar precos repetidos.
+  // Empilha pontos que caem no mesmo lugar, para mostrar precos repetidos. Com muitas compras os pontos
+  // encolhem e a pilha se comprime para nao passar da faixa reservada (abaixo dos rotulos do topo).
+  const r = precos.length > 40 ? 3 : R
   const pilhas = new Map<number, number>()
-  const pontos = [...precos].sort((a, b) => a - b).map((v) => {
-    const k = Math.round(x(v) / (R * 2))
+  const niveis = [...precos].sort((a, b) => a - b).map((v) => {
+    const k = Math.round(x(v) / (r * 2))
     const nivel = pilhas.get(k) ?? 0
     pilhas.set(k, nivel + 1)
-    return { cx: x(v), cy: EIXO - 12 - nivel * (R * 2 + 2) }
+    return { cx: x(v), nivel }
   })
+  const maiorPilha = Math.max(1, ...pilhas.values())
+  const ALTURA = EIXO - 12 - 52 // espaco livre entre o eixo e os rotulos
+  const passoY = Math.min(r * 2 + 2, ALTURA / maiorPilha)
+  const pontos = niveis.map(({ cx, nivel }) => ({ cx, cy: EIXO - 12 - nivel * passoY }))
 
   const resumo =
     limite != null
@@ -50,10 +57,10 @@ export function Regua({ precos, observado, q1, mediana, q3, limite, acima }: Pro
     <figure className="m-0">
       <svg viewBox={`0 0 ${L} ${H}`} role="img" aria-label={resumo} className="h-auto w-full overflow-visible">
         {q1 != null && q3 != null && (
-          <rect x={x(q1)} y={EIXO - 62} width={Math.max(x(q3) - x(q1), 1)} height={62} className="fill-faixa/35" />
+          <rect x={x(q1)} y={EIXO - 12 - ALTURA} width={Math.max(x(q3) - x(q1), 1)} height={ALTURA + 12} className="fill-faixa/35" />
         )}
         {mediana != null && (
-          <line x1={x(mediana)} x2={x(mediana)} y1={EIXO - 62} y2={EIXO} className="stroke-faixa" strokeWidth={2} />
+          <line x1={x(mediana)} x2={x(mediana)} y1={EIXO - 12 - ALTURA} y2={EIXO} className="stroke-faixa" strokeWidth={2} />
         )}
         <line x1={ESQ} x2={L - DIR} y1={EIXO} y2={EIXO} className="stroke-apoio" />
         {ticks.map((t) => (
@@ -65,7 +72,7 @@ export function Regua({ precos, observado, q1, mediana, q3, limite, acima }: Pro
           </g>
         ))}
         {pontos.map((pt, i) => (
-          <circle key={i} cx={pt.cx} cy={pt.cy} r={R} className="fill-tinta/75" />
+          <circle key={i} cx={pt.cx} cy={pt.cy} r={r} className="fill-tinta/75" />
         ))}
         {limite != null && (
           <g>
@@ -100,7 +107,7 @@ export function Regua({ precos, observado, q1, mediana, q3, limite, acima }: Pro
       <figcaption className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-apoio">
         <span><svg width="10" height="10" className="mr-1.5 inline fill-tinta/75 align-middle" aria-hidden><circle cx="5" cy="5" r="5" /></svg>Compras de referência</span>
         {q1 != null && <span><span className="mr-1.5 inline-block h-2.5 w-4 bg-faixa/35 align-middle" aria-hidden />Metade central dos preços (Q1 a Q3), com a mediana</span>}
-        <span>Preços em R$ por litro</span>
+        <span>Preços em R$ por {unidade}</span>
       </figcaption>
     </figure>
   )

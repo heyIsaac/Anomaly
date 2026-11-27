@@ -1,11 +1,11 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { comparaveis, detalhe, loteAtual } from '@/lib/dados'
+import { comparaveis, detalhe, loteDe, lotesAtuais, type Comparavel } from '@/lib/dados'
 import { Regua } from '@/components/Regua'
 import { Origem } from '@/components/Origem'
 import { SeloSituacao } from '@/components/Situacao'
-import { data, inteiro, precoFonte, reais } from '@/lib/formato'
+import { data, inteiro, precoFonte, quantidadeComprada, reais, unidadeCurta } from '@/lib/formato'
 
 type Params = Promise<{ id: string }>
 
@@ -36,10 +36,14 @@ function veredito(sit: string, preco: number, limite: number | null, n: number, 
 
 async function Conteudo({ params }: { params: Params }) {
   const { id } = await params
-  const lote = await loteAtual()
-  if (!lote) notFound()
-  const d = await detalhe(lote.id, id)
+  const lotes = await lotesAtuais()
+  const d = await detalhe(lotes.map((l) => l.id), id)
   if (!d) notFound()
+  const lote = lotes.find((l) => l.id === d.lote_id) ?? (await loteDe(d.lote_id))
+  if (!lote) notFound()
+  const unidade = lote.unidade_comparacao
+  const nome = lote.nome_categoria.toLowerCase().replace('a4', 'A4')
+  const capacidade = d.capacidade && d.capacidade > 0 ? d.capacidade : null
   const refs = await comparaveis(d.avaliacao_id)
   const preco = Number(d.preco_observado)
   const limite = d.limite != null ? Number(d.limite) : null
@@ -54,12 +58,18 @@ async function Conteudo({ params }: { params: Params }) {
           {d.nome_orgao}, {d.municipio}
         </h1>
         <p className="mt-1 text-apoio">
-          Gasolina comum comprada em {data(d.data_compra)}, {inteiro(Number(d.quantidade))} litros
+          {lote.nome_categoria}, compra de {data(d.data_compra)}:{' '}
+          {quantidadeComprada(lote.categoria, Number(d.quantidade), capacidade)}
         </p>
         <p className="mt-6 text-5xl font-bold tracking-tight sm:text-6xl">
           {precoFonte(d.preco_observado)}
-          <span className="ml-2 text-xl font-medium text-apoio">por litro</span>
+          <span className="ml-2 text-xl font-medium text-apoio">por {unidade}</span>
         </p>
+        {capacidade != null && Number(d.preco_unitario) !== Number(d.preco_observado) && (
+          <p className="mt-1 text-apoio">
+            Preço registrado: {precoFonte(d.preco_unitario)} por pacote de {inteiro(capacidade)} folhas
+          </p>
+        )}
         <p className={`mt-3 max-w-[60ch] text-lg ${acima ? 'font-medium text-alerta' : ''}`}>
           {veredito(d.situacao, preco, limite, d.n, d.minimo, d.motivo)}
         </p>
@@ -68,7 +78,7 @@ async function Conteudo({ params }: { params: Params }) {
       <section aria-labelledby="t-regua" className="mt-12">
         <h2 id="t-regua" className="text-lg font-semibold">Como este preço se compara</h2>
         <p className="mt-1 max-w-[70ch] text-apoio">
-          Compras de gasolina comum por litro feitas por órgãos do {uf} entre {data(d.janela_inicio)} e{' '}
+          Compras de {nome}, por {unidade}, feitas por órgãos do {uf} entre {data(d.janela_inicio)} e{' '}
           {data(d.janela_fim)}, os 365 dias anteriores a esta compra.
         </p>
         <div className="mt-6 overflow-x-auto rounded-md bg-folha px-3 py-5 sm:px-6">
@@ -82,6 +92,7 @@ async function Conteudo({ params }: { params: Params }) {
                 q3={d.q3 != null ? Number(d.q3) : null}
                 limite={limite}
                 acima={acima}
+                unidade={unidade}
               />
             </div>
           ) : (
@@ -118,33 +129,23 @@ async function Conteudo({ params }: { params: Params }) {
         </section>
         <section aria-labelledby="t-origem">
           <h2 id="t-origem" className="text-lg font-semibold">Registro de origem</h2>
-          <div className="mt-4"><Origem d={d} catmat={lote.catmat} /></div>
+          <div className="mt-4"><Origem d={d} catmat={d.catmat} /></div>
         </section>
       </div>
 
       {refs.length > 0 && (
         <section aria-labelledby="t-refs" className="mt-14">
           <h2 id="t-refs" className="text-lg font-semibold">As {inteiro(refs.length)} compras usadas na referência</h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[36rem] border-collapse text-left text-[0.9375rem]">
-              <thead className="text-sm text-apoio">
-                <tr className="border-b border-fio">
-                  <th scope="col" className="py-2 pr-4 font-medium">Data</th>
-                  <th scope="col" className="py-2 pr-4 font-medium">Comprador</th>
-                  <th scope="col" className="py-2 text-right font-medium">Preço por litro</th>
-                </tr>
-              </thead>
-              <tbody>
-                {refs.map((r) => (
-                  <tr key={r.id_compra_item} className="border-b border-fio/70">
-                    <td className="py-2 pr-4 whitespace-nowrap text-apoio">{data(r.data_compra)}</td>
-                    <td className="py-2 pr-4">{r.nome_orgao}, {r.municipio}</td>
-                    <td className="py-2 text-right font-medium">{precoFonte(r.preco_unitario)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {refs.length > 12 && (
+            <p className="mt-1 text-sm text-apoio">As 10 de maior preço por {unidade}. As demais ficam logo abaixo.</p>
+          )}
+          <TabelaRefs refs={refs.length > 12 ? refs.slice(0, 10) : refs} unidade={unidade} />
+          {refs.length > 12 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer font-medium">Mostrar as outras {inteiro(refs.length - 10)} compras</summary>
+              <TabelaRefs refs={refs.slice(10)} unidade={unidade} />
+            </details>
+          )}
         </section>
       )}
     </article>
@@ -157,6 +158,31 @@ function Numero({ rotulo, valor, nota }: { rotulo: string; valor: string; nota?:
       <dt className="text-sm text-apoio">{rotulo}</dt>
       <dd className="mt-1 text-xl font-semibold">{valor}</dd>
       {nota && <dd className="text-sm text-apoio">{nota}</dd>}
+    </div>
+  )
+}
+
+function TabelaRefs({ refs, unidade }: { refs: Comparavel[]; unidade: string }) {
+  return (
+    <div className="mt-4 overflow-x-auto">
+      <table className="w-full min-w-[36rem] border-collapse text-left text-[0.9375rem]">
+        <thead className="text-sm text-apoio">
+          <tr className="border-b border-fio">
+            <th scope="col" className="py-2 pr-4 font-medium">Data</th>
+            <th scope="col" className="py-2 pr-4 font-medium">Comprador</th>
+            <th scope="col" className="py-2 text-right font-medium">Preço por {unidadeCurta(unidade)}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {refs.map((r) => (
+            <tr key={r.id_compra_item} className="border-b border-fio/70">
+              <td className="py-2 pr-4 whitespace-nowrap text-apoio">{data(r.data_compra)}</td>
+              <td className="py-2 pr-4">{r.nome_orgao}, {r.municipio}</td>
+              <td className="py-2 text-right font-medium">{precoFonte(r.preco_unitario)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

@@ -13,7 +13,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from . import regra
-from .classificar import VERSAO as VERSAO_CLASSES, classificar, pistas
+from .categorias import CATEGORIAS
 from .origem import conferir
 
 DSN = os.environ.get('DATABASE_URL', 'postgresql://anomaly:anomaly-local@127.0.0.1:5433/anomaly')
@@ -32,34 +32,39 @@ def ler(arquivo: Path):
     return texto, len(brutos), unicos
 
 
-def importar(conn, arquivo: Path, uf: str, extraido_em: date, cache: Path, rede: bool, catmat=None):
+def importar(conn, arquivo: Path, uf: str, extraido_em: date, cache: Path, rede: bool, catmat=None,
+             categoria='gasolina', catalogo: Path | None = None):
+    cat = CATEGORIAS[categoria](catalogo=catalogo)
     texto, total, unicos = ler(arquivo)
+    if catmat is None and cat.codigo_tipo == 'PDM':
+        catmat = int(Counter(x['codigoPdm'] for _, x in unicos.values()).most_common(1)[0][0])
     catmat = catmat or Counter(x['codigoItemCatalogo'] for _, x in unicos.values()).most_common(1)[0][0]
     with conn.cursor() as cur:
         cur.execute(SCHEMA.read_text())
-        cur.execute('INSERT INTO lote (fonte, catmat, arquivo, sha256, extraido_em, total_bruto, total_unico, versao_classificacao)'
-                    ' VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
+        cur.execute('INSERT INTO lote (fonte, catmat, arquivo, sha256, extraido_em, total_bruto, total_unico, versao_classificacao,'
+                    ' categoria, nome_categoria, unidade_comparacao, codigo_tipo)'
+                    ' VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
                     (FONTE, catmat, str(arquivo), hashlib.sha256(texto.encode()).hexdigest(),
-                     extraido_em, total, len(unicos), VERSAO_CLASSES))
+                     extraido_em, total, len(unicos), cat.versao, cat.slug, cat.nome, cat.unidade, cat.codigo_tipo))
         lote = cur.fetchone()[0]
 
         classes, refs = Counter(), []
         linhas = []
         for b, x in unicos.values():
-            classe, motivo = classificar(x)
+            classe, motivo, normalizado = cat.classificar(x)
             classes[classe] += 1
             d = date.fromisoformat(x['dataCompra']) if x.get('dataCompra') else None
             linhas.append((lote, x['idCompraItem'], str(x['idCompra']), d, x.get('estado'), x.get('codigoMunicipio'),
                            x.get('municipio'), x.get('codigoUasg'), x.get('nomeOrgao'), x.get('codigoItemCatalogo'),
                            x.get('siglaUnidadeFornecimento'), x.get('quantidade'), x.get('precoUnitario'),
-                           x.get('criterioJulgamento'), x.get('objetoCompra'), classe, motivo, pistas(x), Jsonb(b)))
-            if classe == 'preco_litro':
+                           x.get('criterioJulgamento'), x.get('objetoCompra'), classe, motivo, cat.pistas(x), normalizado, Jsonb(b)))
+            if classe == cat.valida:
                 refs.append(dict(id=x['idCompraItem'], id_compra=str(x['idCompra']), data=d,
-                                 uf=x.get('estado'), preco=x['precoUnitario']))
+                                 uf=x.get('estado'), preco=normalizado))
         cur.executemany(
             'INSERT INTO registro (lote_id, id_compra_item, id_compra, data_compra, uf, codigo_municipio, municipio,'
             ' codigo_uasg, nome_orgao, catmat, unidade, quantidade, preco_unitario, criterio, objeto, classe,'
-            ' motivo_classe, pistas_revisao, bruto) VALUES (' + ','.join(['%s'] * 19) + ')', linhas)
+            ' motivo_classe, pistas_revisao, preco_normalizado, bruto) VALUES (' + ','.join(['%s'] * 20) + ')', linhas)
 
         situacoes = Counter()
         alvo = [r for r in refs if r['uf'] == uf]
@@ -89,10 +94,15 @@ def main(argv=None):
     ap.add_argument('--extraido-em', type=date.fromisoformat, required=True)
     ap.add_argument('--cache-origem', type=Path, default=Path('dados/2026-11-26-origem'))
     ap.add_argument('--sem-rede', action='store_true', help='confere origem so pelo cache, sem chamar o PNCP')
+    ap.add_argument('--categoria', choices=sorted(CATEGORIAS), default='gasolina')
+    ap.add_argument('--catalogo', type=Path, help='itens do catalogo (modulo-material 4_consultarItemMaterial), exigido para papel-a4')
     a = ap.parse_args(argv)
+    if a.categoria == 'papel-a4' and not a.catalogo:
+        ap.error('--catalogo e obrigatorio para papel-a4')
     with psycopg.connect(DSN) as conn:
         lote, total, unicos, classes, situacoes = importar(conn, a.arquivo, a.uf, a.extraido_em,
-                                                           a.cache_origem, not a.sem_rede)
+                                                           a.cache_origem, not a.sem_rede,
+                                                           categoria=a.categoria, catalogo=a.catalogo)
     print(f'lote {lote}: {total} brutos, {unicos} unicos')
     print('classes:', dict(classes))
     print(f'avaliacoes {a.uf} ({regra.VERSAO}):', dict(situacoes))

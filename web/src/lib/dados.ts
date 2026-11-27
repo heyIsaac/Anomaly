@@ -6,6 +6,10 @@ export type OrigemStatus = 'confirmada' | 'ausente_no_pncp' | 'nao_consultada' |
 
 export type Lote = {
   id: number
+  categoria: string
+  nome_categoria: string
+  unidade_comparacao: string
+  codigo_tipo: string
   fonte: string
   catmat: number
   extraido_em: string
@@ -27,6 +31,11 @@ export type Ocorrencia = {
 
 export type Detalhe = Ocorrencia & {
   avaliacao_id: number
+  lote_id: number
+  catmat: number
+  unidade: string | null
+  preco_unitario: string
+  capacidade: number | null
   id_compra: string
   codigo_uasg: string
   numero_item: number | null
@@ -58,14 +67,24 @@ export type Comparavel = {
   preco_unitario: string
 }
 
-export async function loteAtual(): Promise<Lote | null> {
+const LOTE_COLS = `l.id, l.categoria, l.nome_categoria, l.unidade_comparacao, l.codigo_tipo, l.fonte, l.catmat,
+  l.extraido_em, l.carregado_em, l.total_unico, l.versao_classificacao,
+  (SELECT json_object_agg(classe, n) FROM (SELECT classe, count(*)::int n FROM registro
+    WHERE lote_id = l.id GROUP BY classe) c) AS classes`
+
+/** Lote mais recente de cada categoria que ja tem avaliacoes, na ordem em que a categoria apareceu. */
+export async function lotesAtuais(): Promise<Lote[]> {
   const { rows } = await pool.query(
-    `SELECT l.id, l.fonte, l.catmat, l.extraido_em, l.carregado_em, l.total_unico, l.versao_classificacao,
-            (SELECT json_object_agg(classe, n) FROM (SELECT classe, count(*)::int n FROM registro
-              WHERE lote_id = l.id GROUP BY classe) c) AS classes
-       FROM lote l WHERE EXISTS (SELECT 1 FROM avaliacao a WHERE a.lote_id = l.id)
-      ORDER BY l.id DESC LIMIT 1`,
+    `SELECT ${LOTE_COLS} FROM lote l
+      WHERE l.id IN (SELECT max(id) FROM lote x WHERE EXISTS (SELECT 1 FROM avaliacao a WHERE a.lote_id = x.id)
+                      GROUP BY categoria)
+      ORDER BY (SELECT min(id) FROM lote y WHERE y.categoria = l.categoria)`,
   )
+  return rows
+}
+
+export async function loteDe(id: number): Promise<Lote | null> {
+  const { rows } = await pool.query(`SELECT ${LOTE_COLS} FROM lote l WHERE l.id = $1`, [id])
   return rows[0] ?? null
 }
 
@@ -99,24 +118,27 @@ export async function ocorrencias(lote: number, situacao: Situacao | null, munic
   return rows
 }
 
-export async function detalhe(lote: number, id: string): Promise<Detalhe | null> {
+export async function detalhe(lotes: number[], id: string): Promise<Detalhe | null> {
   const { rows } = await pool.query<Detalhe>(
-    `SELECT a.id AS avaliacao_id, a.id_compra_item, r.id_compra, r.codigo_uasg, (r.bruto->>'numeroItemCompra')::int AS numero_item,
+    `SELECT a.id AS avaliacao_id, a.lote_id, r.catmat, r.unidade, r.preco_unitario,
+            (r.bruto->>'capacidadeUnidadeFornecimento')::numeric::int AS capacidade, a.id_compra_item, r.id_compra, r.codigo_uasg, (r.bruto->>'numeroItemCompra')::int AS numero_item,
             r.data_compra, r.uf, r.municipio, r.nome_orgao, r.quantidade, r.objeto, r.criterio, r.pistas_revisao,
             r.origem_status, r.numero_controle_pncp, a.versao_regra, a.grupo, a.janela_inicio, a.janela_fim, a.minimo,
             a.n, a.q1, a.mediana, a.q3, a.iqr, a.limite, a.preco_observado, a.situacao, a.motivo
        FROM avaliacao a JOIN registro r USING (lote_id, id_compra_item)
-      WHERE a.lote_id = $1 AND a.id_compra_item = $2`,
-    [lote, id],
+      WHERE a.lote_id = ANY($1::int[]) AND a.id_compra_item = $2
+      ORDER BY a.lote_id DESC LIMIT 1`,
+    [lotes, id],
   )
   return rows[0] ?? null
 }
 
 export async function comparaveis(avaliacaoId: number) {
   const { rows } = await pool.query<Comparavel>(
-    `SELECT r.id_compra_item, r.data_compra, r.municipio, r.nome_orgao, r.preco_unitario
+    `SELECT r.id_compra_item, r.data_compra, r.municipio, r.nome_orgao,
+            COALESCE(r.preco_normalizado, r.preco_unitario) AS preco_unitario
        FROM avaliacao_comparavel c JOIN registro r ON r.lote_id = c.lote_id AND r.id_compra_item = c.id_compra_item
-      WHERE c.avaliacao_id = $1 ORDER BY r.preco_unitario DESC, r.data_compra DESC`,
+      WHERE c.avaliacao_id = $1 ORDER BY 5 DESC, r.data_compra DESC`,
     [avaliacaoId],
   )
   return rows

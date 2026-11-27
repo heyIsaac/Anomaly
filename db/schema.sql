@@ -73,3 +73,14 @@ CREATE TABLE IF NOT EXISTS avaliacao_comparavel (
     PRIMARY KEY (avaliacao_id, id_compra_item),
     FOREIGN KEY (lote_id, id_compra_item) REFERENCES registro(lote_id, id_compra_item) ON DELETE CASCADE
 );
+
+-- v3: varias categorias. O lote diz o que esta sendo comparado e em que unidade;
+-- registro.preco_normalizado guarda o preco na unidade de comparacao (R$/L, R$/resma).
+ALTER TABLE lote ADD COLUMN IF NOT EXISTS categoria text NOT NULL DEFAULT 'gasolina';
+ALTER TABLE lote ADD COLUMN IF NOT EXISTS nome_categoria text NOT NULL DEFAULT 'Gasolina comum';
+ALTER TABLE lote ADD COLUMN IF NOT EXISTS unidade_comparacao text NOT NULL DEFAULT 'litro';
+ALTER TABLE lote ADD COLUMN IF NOT EXISTS codigo_tipo text NOT NULL DEFAULT 'CATMAT';
+ALTER TABLE registro ADD COLUMN IF NOT EXISTS preco_normalizado numeric;
+ALTER TABLE registro DROP CONSTRAINT IF EXISTS registro_classe_check;
+ALTER TABLE registro ADD CONSTRAINT registro_classe_check CHECK (classe IN
+    ('preco_litro', 'preco_resma', 'gestao', 'nao_unitario', 'indeterminado', 'outro_item', 'outra_embalagem'));

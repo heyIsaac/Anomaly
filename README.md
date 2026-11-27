@@ -10,6 +10,9 @@ referência estadual por IQR, piloto no RJ. Notas do projeto no vault Obsidian:
 docker compose up -d                 # Postgres 17 em 127.0.0.1:5433 (usuario/banco anomaly)
 uv sync
 uv run anomaly-import dados/2026-11-26-catmat-461506/br_all.json --uf RJ --extraido-em 2026-11-26
+uv run anomaly-import dados/2026-11-26-pdm-19746/rj_all.json --categoria papel-a4 \
+    --catalogo dados/2026-11-26-pdm-19746/itens_catalogo.json --cache-origem dados/2026-11-26-origem-papel \
+    --uf RJ --extraido-em 2026-11-26
 uv run pytest                        # inclui o aceite de Mangaratiba (precisa do Postgres no ar)
 ```
 
@@ -19,7 +22,7 @@ uv run pytest                        # inclui o aceite de Mangaratiba (precisa d
 ## O que o importador faz
 
 1. Lê a extração, guarda o hash do arquivo em `lote` e uma linha por `idCompraItem` em `registro`, com o JSON bruto.
-2. Classifica cada valor (`anomaly/classificar.py`): `preco_litro`, `gestao`, `nao_unitario` ou `indeterminado`, com motivo e pistas de revisão.
+2. Classifica cada valor conforme a categoria (`anomaly/categorias.py`). Gasolina: `preco_litro`, `gestao`, `nao_unitario`, `indeterminado`. Papel A4 (PDM 19746): `preco_resma` (só embalagens de 500 folhas), `outro_item` (outro código, reciclado, couchê, certificado), `outra_embalagem`, `indeterminado`. Cada registro guarda o motivo e o preço na unidade de comparação (`preco_normalizado`).
 3. Avalia os registros `preco_litro` da UF do piloto (`anomaly/regra.py`, versão `iqr-superior-uf-365d-min10-v1`):
    comparáveis da mesma UF nos 365 dias anteriores, mínimo 10, alerta se o preço for maior que Q3 + 1,5 × IQR.
    O limite é guardado exato em `numeric`; a tela formata em duas casas.
@@ -34,7 +37,7 @@ uv run pytest                        # inclui o aceite de Mangaratiba (precisa d
 
 ## Web (`web/`)
 
-Next.js 16 (App Router, Cache Components) com Tailwind. Lê o lote mais recente com um papel somente leitura.
+Next.js 16 (App Router, Cache Components) com Tailwind. Lê o lote mais recente de cada categoria com um papel somente leitura; a lista tem uma aba por categoria (`?categoria=papel-a4`).
 
 ```bash
 docker compose exec -T db psql -U anomaly -d anomaly < db/leitura.sql   # uma vez: cria anomaly_leitura

@@ -8,7 +8,7 @@ const sourceSerif = Source_Serif_4({ subsets: ['latin'], variable: '--font-sourc
 
 export const metadata: Metadata = {
   title: 'ANOMALY: preços em compras públicas',
-  description: 'Preços de gasolina comum em compras públicas do RJ comparados com a referência estadual.',
+  description: 'Preços de compras públicas do RJ, como gasolina e papel A4, comparados com a referência estadual.',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -1,8 +1,8 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
-import { contagens, loteAtual, municipios, ocorrencias, type Situacao } from '@/lib/dados'
+import { contagens, lotesAtuais, municipios, ocorrencias, type Lote, type Situacao } from '@/lib/dados'
 import { SeloSituacao } from '@/components/Situacao'
-import { data, diferenca, inteiro, precoFonte, reais, SITUACAO } from '@/lib/formato'
+import { data, diferenca, FORA, inteiro, precoFonte, reais, SITUACAO, unidadeCurta } from '@/lib/formato'
 
 type Busca = Promise<{ [k: string]: string | string[] | undefined }>
 
@@ -15,26 +15,16 @@ const FILTROS: { valor: Situacao | 'todas'; rotulo: string }[] = [
 
 export default function Page({ searchParams }: { searchParams: Busca }) {
   return (
-    <>
-      <section className="max-w-3xl pt-12 pb-8">
-        <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-[2.5rem]">
-          Preços de gasolina comum pagos por órgãos públicos no Rio de Janeiro
-        </h1>
-        <p className="mt-4 max-w-[62ch] text-lg text-apoio">
-          Cada compra é comparada com as compras de gasolina comum do mesmo estado nos 365 dias anteriores.
-          Um preço acima da referência não prova irregularidade: indica onde vale olhar primeiro.
-        </p>
-      </section>
-      <Suspense fallback={<p className="py-10 text-apoio">Carregando as compras…</p>}>
-        <Lista searchParams={searchParams} />
-      </Suspense>
-    </>
+    <Suspense fallback={<p className="py-16 text-apoio">Carregando as compras…</p>}>
+      <Lista searchParams={searchParams} />
+    </Suspense>
   )
 }
 
 async function Lista({ searchParams }: { searchParams: Busca }) {
   const busca = await searchParams
-  const lote = await loteAtual()
+  const lotes = await lotesAtuais()
+  const lote = lotes.find((l) => l.categoria === busca.categoria) ?? lotes[0]
   if (!lote) {
     return (
       <p className="py-10 text-apoio">
@@ -51,18 +41,39 @@ async function Lista({ searchParams }: { searchParams: Busca }) {
     municipios(lote.id),
   ])
   const total = totais.acima_da_referencia + totais.sem_alerta + totais.referencia_insuficiente
-  const fora = (lote.classes.gestao ?? 0) + (lote.classes.nao_unitario ?? 0) + (lote.classes.indeterminado ?? 0)
-  const qs = (s: string) => `/?situacao=${s}${municipio ? `&municipio=${encodeURIComponent(municipio)}` : ''}`
+  const validos = Object.entries(lote.classes).filter(([k]) => k.startsWith('preco_')).reduce((t, [, n]) => t + n, 0)
+  const excluidas = Object.entries(FORA).filter(([k]) => lote.classes[k]).map(([k, rot]) => `${inteiro(lote.classes[k])} ${rot}`)
+  const fora = Object.keys(FORA).reduce((t, k) => t + (lote.classes[k] ?? 0), 0)
+  const base = `/?categoria=${lote.categoria}`
+  const qs = (s: string) => `${base}&situacao=${s}${municipio ? `&municipio=${encodeURIComponent(municipio)}` : ''}`
+  const nome = lote.nome_categoria.toLowerCase().replace('a4', 'A4')
 
   return (
     <>
+      {lotes.length > 1 && (
+        <nav aria-label="Categoria" className="flex flex-wrap gap-2 pt-8">
+          {lotes.map((l) => (
+            <Link
+              key={l.categoria}
+              href={`/?categoria=${l.categoria}`}
+              aria-current={l.id === lote.id ? 'page' : undefined}
+              className={`rounded-full border px-4 py-1.5 no-underline ${
+                l.id === lote.id ? 'border-tinta bg-tinta text-papel' : 'border-fio text-apoio hover:border-tinta hover:text-tinta'
+              }`}
+            >
+              {l.nome_categoria}
+            </Link>
+          ))}
+        </nav>
+      )}
+      <Cabecalho lote={lote} nome={nome} />
+
       <p className="max-w-[72ch] border-l-2 border-faixa pl-4 text-[0.9375rem] text-apoio">
-        Carga de {data(lote.extraido_em)} do Compras.gov.br (CATMAT {lote.catmat}), com {inteiro(lote.total_unico)} itens
-        de compra no país. {inteiro(lote.classes.preco_litro ?? 0)} trazem preço por litro e entram nas referências.
-        Ficaram fora {inteiro(fora)}: {inteiro(lote.classes.gestao ?? 0)} contratos de gestão de abastecimento,{' '}
-        {inteiro(lote.classes.nao_unitario ?? 0)} valores que não são preço por litro e{' '}
-        {inteiro(lote.classes.indeterminado ?? 0)} sem significado confirmado. Aqui aparecem as {inteiro(total)} compras
-        do RJ.
+        Carga de {data(lote.extraido_em)} do Compras.gov.br ({lote.codigo_tipo} {lote.catmat}), com{' '}
+        {inteiro(lote.total_unico)} itens de compra. {inteiro(validos)} trazem preço por {lote.unidade_comparacao} e
+        entram nas referências.
+        {fora > 0 && <> Ficaram fora {inteiro(fora)}: {excluidas.join(', ').replace(/, ([^,]*)$/, ' e $1')}.</>} Aqui
+        aparecem as {inteiro(total)} compras do RJ.
       </p>
 
       <div className="mt-10 flex flex-col gap-4 border-b border-fio pb-4 md:flex-row md:items-end md:justify-between">
@@ -83,6 +94,7 @@ async function Lista({ searchParams }: { searchParams: Busca }) {
           })}
         </nav>
         <form className="flex items-end gap-2" action="/">
+          <input type="hidden" name="categoria" value={lote.categoria} />
           <input type="hidden" name="situacao" value={situacao} />
           <label className="flex flex-col text-sm text-apoio">
             Município
@@ -106,17 +118,17 @@ async function Lista({ searchParams }: { searchParams: Busca }) {
       {linhas.length === 0 ? (
         <p className="py-10 text-apoio">
           Nenhuma compra nesta situação{municipio ? ` em ${municipio}` : ''}.{' '}
-          <Link href="/?situacao=todas">Ver todas as compras do RJ</Link>.
+          <Link href={`${base}&situacao=todas`}>Ver todas as compras do RJ</Link>.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[44rem] border-collapse text-left">
-            <caption className="sr-only">Compras de gasolina comum do RJ e a situação de cada preço</caption>
+            <caption className="sr-only">Compras de {nome} do RJ e a situação de cada preço</caption>
             <thead className="text-sm text-apoio">
               <tr className="border-b border-fio">
                 <th scope="col" className="py-3 pr-4 font-medium">Data</th>
                 <th scope="col" className="py-3 pr-4 font-medium">Comprador</th>
-                <th scope="col" className="py-3 pr-4 text-right font-medium">Preço por litro</th>
+                <th scope="col" className="py-3 pr-4 text-right font-medium">Preço por {unidadeCurta(lote.unidade_comparacao)}</th>
                 <th scope="col" className="py-3 pr-4 text-right font-medium">Em relação ao limite</th>
                 <th scope="col" className="py-3 font-medium">Situação</th>
               </tr>
@@ -146,5 +158,19 @@ async function Lista({ searchParams }: { searchParams: Busca }) {
         </div>
       )}
     </>
+  )
+}
+
+function Cabecalho({ lote, nome }: { lote: Lote; nome: string }) {
+  return (
+    <section className="max-w-3xl pt-8 pb-8">
+      <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-[2.5rem]">
+        Preços de {nome} pagos por órgãos públicos no Rio de Janeiro
+      </h1>
+      <p className="mt-4 max-w-[62ch] text-lg text-apoio">
+        Cada compra é comparada, por {lote.unidade_comparacao}, com as compras de {nome} do mesmo estado nos 365 dias
+        anteriores. Um preço acima da referência não prova irregularidade: indica onde vale olhar primeiro.
+      </p>
+    </section>
   )
 }
